@@ -32,7 +32,7 @@ class MoveRobot:
         self.mode = model_config['mode'] # training or testing mode
 
         self.record_video = model_config['testing']['record_video'] # whether to record video           
-        
+
         # model specific params
         self.model_name = model_config['model']['name'] # model name
         self.gamma = model_config['model']['gamma'] # discount factor
@@ -46,7 +46,7 @@ class MoveRobot:
 
         import tensorflow as tf
         print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
-        
+
         # Epsilon Greedy Parameters
         self.epsilon_initial = model_config['epsilon_greedy']['eps_init'] # starting value of epsilon
         self.epsilon_end = model_config['epsilon_greedy']['eps_end'] # final value of epsilon
@@ -80,7 +80,7 @@ class MoveRobot:
             if self.n_steps == False:
                 self.n_steps = self.max_steps
             self.save_model_weights = model_config['training']['save_model_weights']
-        
+
         # initialise testing params if mode is testing
         elif self.mode == 'test':
             self.device_type = model_config['testing']['device']
@@ -105,7 +105,6 @@ class MoveRobot:
             self.save_model_weights = False
             self.record_video = model_config['testing']['record_video']
 
-
         # load environment params
         self.video_mode = model_config['environment']['video_mode']
         self.render_mode = model_config['environment']['render_mode']
@@ -121,14 +120,14 @@ class MoveRobot:
 
         if self.goal_step > self.max_steps:
             raise ValueError('goal step cannot be larger than max steps')
-        
+
         # if multi-agent or multi-action model is used
         if self.model_name == 'MAA2C':
             self.multi_action = True
         # else single agent/single action model is used
         else:
             self.multi_action = False
-        
+
         if self.mode == 'test' and self.record_video:
             self.render_mode = 'GUI'
         # create our environment object class
@@ -143,7 +142,7 @@ class MoveRobot:
                         multi_action = self.multi_action,
                         goal_type=self.goal_type
                         )
-        
+
         # get observation dimensions
         self.observation_space_dimension = len(self.env.get_robot_state())
         # get action space dimensions
@@ -152,36 +151,36 @@ class MoveRobot:
         # results dir stores the results of each experiment run
         import os
         self.results_dir = os.path.join(self.base_results_dir,self.run_name)
-                
+
         # if hyperparameter tuning, we create subdirectories to save the results of each run with a new hyperparameter value
         if hyperparameter_tuning_variable:
             self.results_dir = os.path.join(self.results_dir,f"{hyperparameter_tuning_variable}_{hyperparameter_value}")
-        
+
         # clears results directory if exist
         if os.path.exists(self.results_dir) and os.path.isdir(self.results_dir):
             shutil.rmtree(self.results_dir)
 
-        # creates results directory for current run 
+        # creates results directory for current run
         if not os.path.exists(self.results_dir):
             os.makedirs(self.results_dir)
         print(f'Saving results to {self.results_dir}')
-        
+
         if self.model_name == "DQN" or self.model_name == "DQNMA" or self.model_name == 'SAC':
             self.save_model_weights_path = os.path.join(self.results_dir,'best_model.pt')
             model_config['load_model_weights_path'] = self.save_model_weights_path
         else:
             model_config['load_model_weights_path'] = self.results_dir
-        
+
         # save config file to results dir
         with open(os.path.join(self.results_dir, f"{self.run_name}.yaml"), 'w') as f:
             yaml.dump(model_config,f)
 
-        # creates trajectory results directory for current run 
+        # creates trajectory results directory for current run
         self.results_dir_trajectory = os.path.join(self.results_dir,'robot_trajectories')
         if not os.path.exists(self.results_dir_trajectory):
             os.makedirs(self.results_dir_trajectory)
 
-         # creates plot results directory for current run 
+        # creates plot results directory for current run
         self.results_dir_plot = os.path.join(self.results_dir,'graphs')
         if not os.path.exists(self.results_dir_plot):
             os.makedirs(self.results_dir_plot)
@@ -197,14 +196,14 @@ class MoveRobot:
         if self.mode == 'test':
             self.epsilon_initial = 0.0
             self.epsilon_end = 0.0
-        
+
         # initialise epsilon function class for varying epsilon during training
         self.epsilon_function=epsilon_function(self.num_episodes,
                                                eps_init=self.epsilon_initial,
                                                eps_end=self.epsilon_end,
                                                epsilon_decay_type=self.epsilon_decay_type,
                                                A=self.epsilon_A,B=self.epsilon_B,C=self.epsilon_C)
-        
+
         # --------------------------------PURELY FOR MODEL INITIALISATION-------------------------------------------------
 
         self.tf_model_list = ['A2C','MAA2C','Reinforce']
@@ -222,7 +221,7 @@ class MoveRobot:
                 self.policy_net = DQN(self.observation_space_dimension, len(self.differential_action_scheme.new_mapping), self.hidden_layer_size).to(self.device)
                 self.target_net = DQN(self.observation_space_dimension, len(self.differential_action_scheme.new_mapping), self.hidden_layer_size).to(self.device)
             self.target_net.load_state_dict(self.policy_net.state_dict())
- 
+
             self.optimizer = optim.AdamW(self.policy_net.parameters(), lr=self.learning_rate_actor, amsgrad=True)
             self.memory = ReplayMemoryDQN(10000)
 
@@ -231,7 +230,7 @@ class MoveRobot:
                 print(f"Loading model from {self.load_model_weight_path}")
                 # load saved model weights
                 self.policy_net.load_state_dict(torch.load(self.load_model_weight_path, map_location=self.device))
-            
+
             # Set model for parallel computation, move model to devie
             from torch.nn.parallel import DataParallel
             if self.device_type != 'cpu':
@@ -254,15 +253,6 @@ class MoveRobot:
             self.updates = 0
             self.agent = SAC(num_inputs = self.observation_space_dimension, hidden_layer_size = self.hidden_layer_size[0], learning_rate = self.learning_rate_actor, update_interval = 1, device = self.device, epsilon = self.epsilon_initial, gamma = self.gamma, tau = self.tau)
             self.memory = ReplayMemorySAC(10000)
-            # Set model for parallel computation, move model to devie
-            from torch.nn.parallel import DataParallel
-            if self.device_type != 'cpu':
-                self.agent = DataParallel(self.agent.)
-                self.agent = self.agent.to(self.device)
-            else:
-                self.agent = DataParallel(self.agent)
-                self.agent = self.agent.to(self.device)
-            
 
             if self.mode == 'test':
                 print(f"Loading model from {self.load_model_weight_path}")
@@ -270,7 +260,6 @@ class MoveRobot:
                 print(load_weight)
                 # load saved model weights
                 self.agent.load_state_dict(torch.load(self.load_model_weight_path, map_location=self.device))
-
 
         elif self.model_name in self.tf_model_list:
             self.num_wheels = 2
@@ -287,7 +276,7 @@ class MoveRobot:
                             observation_space_dimension=self.observation_space_dimension, 
                             epsilon = self.epsilon_initial,
                             num_wheels = self.num_wheels)
-            
+
             elif self.model_name == "A2C":
                 self.agent = Agent(model = self.model_name, 
                             discount_rate = self.gamma, 
@@ -302,13 +291,13 @@ class MoveRobot:
                             num_wheels = self.num_wheels)
             else:
                 raise ValueError("Invalid model/algorithm set in config")
-            
+
         else:
             raise ValueError(f"model_name {self.model_name} not recognized")
-        
+
         # initialise training metrics logging function
         self.MetricTotal=TotalTrainingMetrics()
-       
+
         # printing which device used for running
         print(f"Using device: {self.device}")
 
@@ -337,23 +326,23 @@ class MoveRobot:
 
         # set gravity to -9.8 m/s^2
         p.setGravity(0,0,-9.8)
-        
+
         # run episode by stepping through each step
         for time_step in range(self.max_steps):
             if self.record_video and self.render_mode=='GUI' and (episode == record_episode):
                 record_gui_mode(p,time_step)
-                
+
             # capture image frames for DIRECT mode for specified episode
             if self.video_mode and self.render_mode=='DIRECT' and (episode == record_episode): #and time_step % 100 == 0:
                 record_direct_mode(p,time_step)
-            
+
             # save trajectories of robot at each time step
             if (time_step % self.record_trajectory_time_step_interval) == 0:
                 base_pos, _ = p.getBasePositionAndOrientation(self.env.robotid)
                 linear_velocity, angular_velocity = p.getBaseVelocity(self.env.robotid)
                 x_pos_list.append(base_pos[0])
                 y_pos_list.append(base_pos[1])
-                
+
             """ get action from model and take a step in the environment """
             # enable keyboard manual control for debugging
             if self.enable_keyboard:
@@ -361,14 +350,14 @@ class MoveRobot:
                 if ord('q') in keys:
                     break
                 action = self.env.select_manual_action_from_keyboard(keys)
-            
+
             # model to choose action
             else:
                 if (self.model_name == 'DQN' or self.model_name == "DQNMA"):
                     from robot_neural_network import select_action_DQN, update_weights
                     if (self.model_name == 'DQN' or self.model_name == "DQNMA") and not self.enable_keyboard and self.mode == 'test':
                         state = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
-                    
+
                     action = select_action_DQN(obs = state, n_actions = self.action_space_dimension, policy_net = self.policy_net, device = self.device, epsilon = self.epsilon) # state, self.policy_net, self.device, self.epsilon)
                 elif self.model_name == 'SAC':
                     action = self.agent.module.select_action(state, self.epsilon,evaluate=self.mode)  # Sample action from policy
@@ -383,13 +372,13 @@ class MoveRobot:
                 step_action = action
             elif self.model_name == "DQNMA":
                 step_action = self.differential_action_scheme.new_mapping[int(action)]
-                
+
             else:
                 step_action = action[0]
             # take a step in environment and observe next state and rewards
             next_state, reward, transient_reward, done, suceed, info = \
                 self.env.step(step_action, self.model_name, time_step=time_step, goal_step=self.goal_step)
-            
+
             # normalise observations
             next_state = self.env.normalize_observations(next_state)
 
@@ -402,7 +391,7 @@ class MoveRobot:
             linear_velocity, angular_velocity = p.getBaseVelocity(self.env.robotid)
 
             self.MetricTotal.intermediate_episode(base_pos,linear_velocity)
-            
+
             """ ===== update models during training ===== """
             if self.mode == 'train':
                 # update weights of SAC model
@@ -419,16 +408,16 @@ class MoveRobot:
                         mask = 1 
                     else:
                         mask = float(not done)
-                    
+
                     # Add transition to memory
                     self.memory.push(state, action, reward, next_state, mask) 
 
                 # update weights of DQN model
                 elif (self.model_name == 'DQN' or self.model_name == 'DQNMA') and not self.enable_keyboard:
-                    
+
                     next_state = torch.tensor(next_state, dtype=torch.float32, device=self.device).unsqueeze(0)
                     transient_reward = torch.tensor(transient_reward, dtype=torch.float32, device=self.device).unsqueeze(0)
-                    
+
                     # Store the transition in memory
                     self.memory.push(state, action, next_state, transient_reward)
 
@@ -461,7 +450,7 @@ class MoveRobot:
                         actor_observations = actor_observations_prime
                         critic_observations = critic_observations_prime
 
-                    # apply gradients for combined hybrid actor critic 
+                    # apply gradients for combined hybrid actor critic
                     elif self.agent.model == "A2C" or  self.agent.model == "Reinforce": 
                         tf_loss = self.agent.update_weights(model_name=self.agent.model, 
                                                   observations=state, 
@@ -473,7 +462,7 @@ class MoveRobot:
                         loss += tf_loss[0]
                     elif type(tf_loss) == float:
                         loss += tf_loss
-                        
+
             # assign previous state to current state
             state = next_state
 
@@ -491,7 +480,7 @@ class MoveRobot:
 
                 # add all logging metrics to the MetricTotal class at the end of the episode
                 self.MetricTotal.end_episode(transient_reward, cumulative_transient_reward, reward, cumulative_reward, time_step, base_pos, self.epsilon,loss)
-                
+
                 # add robot final trajectory position (x,y) coordinates to lists
                 x_pos_list.append(base_pos[0])
                 y_pos_list.append(base_pos[1])
@@ -499,13 +488,13 @@ class MoveRobot:
 
         # plot the episode trajectory
         plt.plot(y_pos_list, x_pos_list, color=self.robot_trajectory_color)
-        
+
         # sitch video for DIRECT mode for specified episode
         if ((self.record_video and self.render_mode =='GUI') or \
             (self.video_mode and self.render_mode =='DIRECT')) \
                 and episode == record_episode:
             stitch_video_direct_mode(episode)
-        
+
         return steps_transient_reward_list[-1], suceed, time_step
 
     def plot_trajectories(self,episode_index):
@@ -532,7 +521,7 @@ class MoveRobot:
         print(f"goal type: {self.goal_type}")
         mode_caption = 'TRAINING' if self.mode == 'train' else 'TESTING'            
         print(f"\n ===== START {mode_caption} ===== ")
-        
+
         total_success = 0
         import time
         start_time = time.time()
@@ -545,22 +534,22 @@ class MoveRobot:
                 self.env.reset()
 
             self.epsilon = self.epsilon_function.get_current_epsilon(episode)
-           
+
             ep_reward, is_succeed, end_step = self.run_episode(episode)            
             total_success += is_succeed
             print(f"\r\033[KEpisode: {episode+1}/{self.num_episodes} | Sucesses so far: {total_success}/{episode+1} | Sucess Rate: {round(total_success*100/(episode+1),2)}% | epsilon threshold: {round(self.epsilon,5):.5f} | transient rewards: {round(ep_reward,5):.5f} | survival_time: {round(end_step*self.time_step_size,2):.2f} | end_step: {end_step}", end='', flush=True)
-            
+
             # plot trajectories for TWR at an episode interval
             if episode != 0 and episode% self.plot_trajectories_episode_interval==0:
                 self.plot_trajectories(episode)
                 if episode+1 != self.num_episodes:
                     self.robot_trajectory_color = np.random.rand(3,)
-        
+
         # plot last episode trajectories
         self.plot_trajectories(episode+1)
         self.MetricTotal.end_training()
         self.MetricTotal.plot_all(self.time_step_size, self.results_dir_plot)
-        
+
         plt.clf()
         plt.figure().clear()
         plt.close('all')
