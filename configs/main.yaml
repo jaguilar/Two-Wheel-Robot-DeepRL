@@ -45,6 +45,7 @@ testing:
   max_steps_per_episode: 50000 # 100secs per ep
   base_results_dir: './results/test/' # defines the base directory to create a folder with the config yaml name
   record_video: True
+load_model_weights_path: './results/test/SAC_distance_30_128_hidden'
 
 # ======= ENVIRONMENT ======= #
 environment:

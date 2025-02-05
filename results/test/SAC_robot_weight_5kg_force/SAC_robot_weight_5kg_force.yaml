@@ -1,4 +1,4 @@
-config_path: results/train/SAC_robot_weight_5kg_force/SAC_robot_weight_5kg_force.yaml
+config_path: ./configs/main.yaml
 environment:
   distance_to_goal_penalty: 0.7
   enable_keyboard: false
@@ -30,7 +30,7 @@ hyperparameter_tuning:
   - 0.0001
   - 1.0e-05
   - 1.0e-06
-load_model_weights_path: ./results/test/SAC_robot_weight_5kg_force\best_model.pt
+load_model_weights_path: ./results/test/SAC_robot_weight_5kg_force/best_model.pt
 mode: test
 model:
   batch_size: 1
