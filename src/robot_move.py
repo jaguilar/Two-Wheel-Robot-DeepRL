@@ -257,11 +257,11 @@ class MoveRobot:
             # Set model for parallel computation, move model to devie
             from torch.nn.parallel import DataParallel
             if self.device_type != 'cpu':
-                self.agent = DataParallel(self.agent)
+                self.agent = DataParallel(self.agent.)
                 self.agent = self.agent.to(self.device)
             else:
                 self.agent = DataParallel(self.agent)
-                self.agent =self.agent.to(self.device)
+                self.agent = self.agent.to(self.device)
             
 
             if self.mode == 'test':
