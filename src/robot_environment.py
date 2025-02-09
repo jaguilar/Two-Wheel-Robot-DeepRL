@@ -4,6 +4,13 @@ import pybullet_data
 import numpy as np
 import math
 
+from tf_agents.environments.py_environment import PyEnvironment
+from tf_agents.specs import array_spec
+from tf_agents.trajectories import time_step as ts
+from tf_agents.typing import types
+from tf_agents.utils import common
+
+
 class TwoWheelRobot:
     def __init__(self,
                  render_mode='GUI',
@@ -36,7 +43,7 @@ class TwoWheelRobot:
             p.connect(p.GUI)
         elif render_mode =='DIRECT': # run headlessly
             p.connect(p.DIRECT)
-        
+
         # get environment parameters
         self.target_velocity_change = target_velocity_change
         self.x_distance_to_goal = x_distance_to_goal
@@ -49,13 +56,13 @@ class TwoWheelRobot:
         self.multi_action = multi_action
         self.goal_type = goal_type
         self.reset()
-        
-        # set time step of simulation 
+
+        # set time step of simulation
         self.time_step_size = time_step_size
         # if manual keyboard control or recording video, switch to smaller timesteps, else training/testing will default to 1/240 time steps
         if self.enable_keyboard or self.record_video:
             p.setTimeStep(24000)
-                
+
         self.action_dict={
             0: "reverse_4",
             1: "reverse_3",
@@ -74,7 +81,7 @@ class TwoWheelRobot:
 
         # resets the PyBullet Environment to remove all objects
         p.resetSimulation()
-        
+
         # Sets Camera View for debug camera
         # sets third_person_view to face robot's front view
         if self.third_person_view == 'front':
@@ -86,7 +93,7 @@ class TwoWheelRobot:
         else:
             p.resetDebugVisualizerCamera(cameraDistance=10, cameraYaw=-90, cameraPitch=-40, cameraTargetPosition=[5,0,0])
 
-        # Load Environment 
+        # Load Environment
         urdfRootPath = pybullet_data.getDataPath()
         self.planeid = p.loadURDF(os.path.join(urdfRootPath,"plane.urdf"), basePosition=[0,0,0])
 
@@ -95,7 +102,7 @@ class TwoWheelRobot:
                                     globalScaling=4.0, basePosition=[0,0,0], 
                                     baseOrientation=startOrientation,
                                     flags=p.URDF_USE_IMPLICIT_CYLINDER)
-        
+
         # reset is called once at initialization of simulation
         self.target_velocity_left_wheel = 0 # initialise current target velocity of left wheel
         self.target_velocity_right_wheel = 0 # initialise current target velocity of right wheel
@@ -107,12 +114,12 @@ class TwoWheelRobot:
         self.goal_line_x = self.x_distance_to_goal #self.max_x_bound - 35
         self.min_y_bound = -15
         self.max_y_bound = 15
-        
+
         # set environment type (FLAT or SLOPE)
         if self.flat_env == 'SLOPE':
             self.load_slope()
             self.load_river()
-        
+
         # Load environment boundaries
         self.load_boundaries()
 
@@ -129,16 +136,17 @@ class TwoWheelRobot:
 
         # disable velocity motor for all robot joints
         p.setJointMotorControlArray(self.robotid, range(self.numrobotJoints), controlMode=p.VELOCITY_CONTROL, forces = [0 for _ in range(self.numrobotJoints)])
-        
+
         # Set the friction coefficient for the front and rear wheel contact
         friction_coefficient = 1
         p.changeDynamics(self.robotid, self._link_name_to_index['left_wheel'], lateralFriction=friction_coefficient)
         p.changeDynamics(self.robotid, self._link_name_to_index['right_wheel'], lateralFriction=friction_coefficient)
+        p.setGravity(0,0,-9.8)
 
         # initialise torque force of wheel
         self.force = 25
-    
-    def step(self, action, model_name, time_step, goal_step):
+
+    def step(self, action: np.array, model_name: str, time_step: int, goal_step: int):
         """
         """
         # enable third person view, camera to follow robot
@@ -148,7 +156,7 @@ class TwoWheelRobot:
         if self.third_person_view == 'side':
             self.basePos, self.baseOrn = p.getBasePositionAndOrientation(self.robotid) # Get model position
             p.resetDebugVisualizerCamera(cameraDistance=3,  cameraYaw=0, cameraPitch=-30, cameraTargetPosition=self.basePos)
-        
+
         """ actuate action on physical robot in pybullet simulation """
         self.control_robot(action, model_name)
 
@@ -157,20 +165,19 @@ class TwoWheelRobot:
         num_pybullet_steps_to_step_through = max(int(self.time_step_size * pybullet_steps),1)
         for _ in range(num_pybullet_steps_to_step_through):
             p.stepSimulation() # rum simulation for default time step of 1/240 seconds
-            
-        
+
         """ get observations from environment """
         observations = self.get_robot_state()
-        
+
         """ check if agent is in terminal state after taking action """
         (done,succeed) = self.check_terminal_state(time_step=time_step, goal_step=goal_step) #end_episode == done
-            
+
         # get state rewards rewards
         reward = self.return_state_reward(done,succeed) #reward
-        
+
         # get transient rewards
         transient_reward = reward
-        # distance goal type 
+        # distance goal type
         if self.goal_type == 'distance':
             transient_time_reward = self.get_robot_time_reward(time_step=time_step,goal_steps=goal_step)
             transient_reward += transient_time_reward
@@ -182,8 +189,6 @@ class TwoWheelRobot:
             transient_reward += transient_time_reward
             transient_velocity_reward = self.get_velocity_time_reward()
             transient_reward += transient_velocity_reward
-
-        # print('transient reward:',round(transient_time_reward,10), round(transient_shape_reward,2),round(transient_reward,2))
 
         return observations, reward, transient_reward, done, succeed, {}
 
@@ -213,14 +218,14 @@ class TwoWheelRobot:
         """
         # assign current robot base position to previous robot_base position for calculation of distance reward shape function
         self.prev_robot_base_position = self.robot_base_position
-        
+
         # get observations from robot base
         self.robot_base_position, self.robot_base_orientation = p.getBasePositionAndOrientation(self.robotid)
-       
+
         # size 3, base linear velocity [x,y,z] in Cartesian world coordinates
         # size 3, base angular velocity [wx,wy,wz] in Cartesian world coordinates.
         base_linear_velocity, base_angular_velocity = p.getBaseVelocity(self.robotid)
-        
+
         # size 3, robot_base_orientation: Wx, Wy, Wz in Cartesian world coordinates.
         robot_base_orientation_Euler = p.getEulerFromQuaternion(self.robot_base_orientation)
 
@@ -229,30 +234,30 @@ class TwoWheelRobot:
 
         # add robot target wheel angular velocities observations, size 2
         self.observation = np.concatenate((self.observation, self.target_velocity_left_wheel, self.target_velocity_right_wheel), axis = None)
-        
+
         # get observations from robot joints and links
         link_states = list(p.getLinkStates(self.robotid, list(range(self.numrobotJoints)), computeLinkVelocity = 1)) 
         joint_states = list(p.getJointStates(self.robotid,list(range(self.numrobotJoints))))
 
         # loop through all robot joints and links (2 wheel joints)
         for joint_id in range(self.numrobotJoints):
-            
+
             # size = 1, obtain angular velocity value of this wheel joint, w
             wheel_joint_angular_velocity = joint_states[joint_id][1]
-            
+
             # size = 3, obtain local COM/center of mass (x,y,z) position offset of inertial frame expressed in URDF link frame
             local_link_com_position = np.array(link_states[joint_id][2]) # localInertialFramePosition
-            
+
             # size = 3, roll around X, then pitch around Y and finally yaw around Z, as in the ROS URDF rpy convention
             # obtain local orientation (X,Y,Z) offset of the inertial frame expressed in URDF link frame.
             local_link_com_orientation = np.array(p.getEulerFromQuaternion(link_states[joint_id][3])) # localInertialFrameOrientation
-            
+
             # size = 3, obtain Cartesian world velocity (Vx, Vy, Vz). Only returned if computeLinkVelocity non-zero.
             local_link_com_linear_velocity = np.array(link_states[joint_id][6]) # worldLinkLinearVelocity
-            
+
             # size = 3, obtain Cartesian world velocity (Wx, Wy, Wz). Only returned if computeLinkVelocity non-zero.
             local_link_com_angular_velocity = np.array(link_states[joint_id][7]) # worldLinkAngularVelocity
-            
+
             # concatenate and flatten observations
             self.observation = np.concatenate((self.observation,
                                                 wheel_joint_angular_velocity,
@@ -261,7 +266,7 @@ class TwoWheelRobot:
                                                 local_link_com_linear_velocity,
                                                 local_link_com_angular_velocity), axis = None)
 
-        # print('num of observations:',len(self.observation))                          
+        # print('num of observations:',len(self.observation))
 
         return self.observation
 
@@ -304,7 +309,7 @@ class TwoWheelRobot:
         observations[9] = normalize(observations[9], min_value, max_value)
         observations[10] = normalize(observations[10], min_value, max_value)
         observations[11] = normalize(observations[11], min_value, max_value)
-        
+
         # normalise target rotational velocity of left and right wheel, w
         min_value, max_value = -self.maxV, self.maxV
         observations[12] = normalize(observations[12], min_value, max_value) # left wheel
@@ -315,7 +320,7 @@ class TwoWheelRobot:
         wheel_radius = 0.4
         min_value, max_value = -self.maxV * wheel_radius, self.maxV * wheel_radius
         observations[14] = normalize(observations[14], min_value, max_value)
-        
+
         # normalize left wheel COM position, (x,y,z)
         min_value, max_value = -2, 2
         observations[15] = normalize(observations[15], min_value, max_value)
@@ -335,7 +340,7 @@ class TwoWheelRobot:
         observations[22] = normalize(observations[22], min_value, max_value)
         observations[23] = normalize(observations[23], min_value, max_value)
 
-         # normalise left wheel COM angular velocity, (Wx, Wy, Wz)
+        # normalise left wheel COM angular velocity, (Wx, Wy, Wz)
         min_value, max_value = -self.maxV, self.maxV
         observations[24] = normalize(observations[24], min_value, max_value)
         observations[25] = normalize(observations[25], min_value, max_value)
@@ -346,7 +351,7 @@ class TwoWheelRobot:
         wheel_radius = 0.4
         min_value, max_value = -self.maxV * wheel_radius, self.maxV * wheel_radius
         observations[27] = normalize(observations[27], min_value, max_value)
-        
+
         # normalize right wheel COM position, (x,y,z)
         min_value, max_value = -2, 2
         observations[28] = normalize(observations[28], min_value, max_value)
@@ -366,14 +371,14 @@ class TwoWheelRobot:
         observations[35] = normalize(observations[35], min_value, max_value)
         observations[36] = normalize(observations[36], min_value, max_value)
 
-         # normalise right wheel COM angular velocity, (Wx, Wy, Wz)
+        # normalise right wheel COM angular velocity, (Wx, Wy, Wz)
         min_value, max_value = -self.maxV, self.maxV
         observations[37] = normalize(observations[37], min_value, max_value)
         observations[38] = normalize(observations[38], min_value, max_value)
         observations[39] = normalize(observations[39], min_value, max_value)
         # print('observations normalized:',observations)
         return observations
-        
+
     def check_terminal_state(self, time_step, goal_step):
         """Check if robot has reached terminal state.
 
@@ -403,8 +408,7 @@ class TwoWheelRobot:
         # if robot's COM coordinates is outside defined boundaries, robot is in terminal state
         robotPos, _ = p.getBasePositionAndOrientation(self.robotid)
         x, y = robotPos[0], robotPos[1]
-  
-        
+
         # Based on how the robot urdf was created, we defined roll to be the pitch (and vice versa) in the robot urdf link
         pitch, roll, yaw = p.getEulerFromQuaternion(self.robot_base_orientation) # radians
 
@@ -414,7 +418,7 @@ class TwoWheelRobot:
         # set the goal type
         # if goal type is distance goal
         if self.goal_type == 'distance':
-            #if robot's COM reaches the other side of riverbank and crosses the goal line, the robot is in terminal state (reached goal)
+            # if robot's COM reaches the other side of riverbank and crosses the goal line, the robot is in terminal state (reached goal)
             if (x > self.goal_line_x) and (x < self.max_x_bound):
                 return succeed
             # load boundaries to prevent robot from moving too far
@@ -422,7 +426,7 @@ class TwoWheelRobot:
                 return fail
             elif y < self.min_y_bound or y > self.max_y_bound:
                 return fail
-            
+
         # if goal type is time goal
         elif self.goal_type == 'time':
             if time_step > goal_step:
@@ -432,7 +436,7 @@ class TwoWheelRobot:
 
         # if all checks are okay, robot is in non-terminal state
         return ongoing
-    
+
     def control_robot(self,action, model_name):
         """Control robot by action given by model/user
 
@@ -441,17 +445,19 @@ class TwoWheelRobot:
         """
 
         if self.enable_keyboard:
-           action=self.action_dict[action]
+            action = self.action_dict[action]
+        elif model_name == "SAC-TFA":
+            # The action is just the action in the tf-agents version.
+            pass
         elif model_name == 'SAC': # continous
             action=action
         elif model_name == "DQN":
-           action=self.action_dict[action.item()]
+            action = self.action_dict[action.item()]
         elif model_name == "MAA2C" or model_name == "DQNMA":
-           action=[self.action_dict[int(act)] for act in action]
+            action = [self.action_dict[int(act)] for act in action]
         else:
             action=self.action_dict[action]
-        
-        
+
         def limit(value, min_value, max_value):
             """ Limits the value between min and max values. 
             If value is above max, returned value is max.
@@ -501,9 +507,22 @@ class TwoWheelRobot:
             else:
                 print(f'action ({action}) is invalid!')
             return deltav 
-        
+
         # get new target velocity of each wheel based on multi agent actions
-        if model_name == 'MAA2C' or model_name == "DQNMA":
+        if model_name == "SAC-TFA":
+            self.target_velocity_left_wheel = limit(
+                self.target_velocity_left_wheel
+                + action[0] * self.target_velocity_change,
+                -self.maxV,
+                self.maxV,
+            )
+            self.target_velocity_right_wheel = limit(
+                self.target_velocity_right_wheel
+                + action[1] * self.target_velocity_change,
+                -self.maxV,
+                self.maxV,
+            )
+        elif model_name == "MAA2C" or model_name == "DQNMA":
             self.target_velocity_left_wheel = limit(self.target_velocity_left_wheel + get_change_in_wheel_velocity(action[0], self.target_velocity_change), -self.maxV, self.maxV)
             self.target_velocity_right_wheel = limit(self.target_velocity_right_wheel + get_change_in_wheel_velocity(action[1], self.target_velocity_change), -self.maxV, self.maxV)
         elif model_name == 'SAC':
@@ -531,9 +550,9 @@ class TwoWheelRobot:
         """Get action space size 
         """
         return len(self.action_dict)
-    
+
     """ ===== Methods for reward ===== """
-    
+
     def return_state_reward(self, end_episode, succeed):
         """Return State Rewards
 
@@ -544,7 +563,7 @@ class TwoWheelRobot:
         Returns:
             reward (int): reward value based on terminal state reached by robot.
         """
-        
+
         reward_map = {"fall":-1,
                       "reached_goal":1,
                       "neutral":0}
@@ -555,7 +574,7 @@ class TwoWheelRobot:
                 return reward_map["fall"]
         else:
             return reward_map["neutral"]
-                
+
     def get_shaped_reward_distance_to_goal(self,end_episode):
         """Get shaped reward for distance to goal.
 
@@ -572,18 +591,18 @@ class TwoWheelRobot:
             prev_x = self.prev_robot_base_position[0]
             current_x_distance = self.goal_line_x - current_x # current distance to goal
 
-            # if current state is closer to the goal line as compared to previous state, 
+            # if current state is closer to the goal line as compared to previous state,
             # reward the agent for moving closer to goal
             if current_x > prev_x:
                 # increasing linear transient reward gradient moving towards goal line.
-                # closer the agent to goal, positive transient reward is larger. 
+                # closer the agent to goal, positive transient reward is larger.
                 # we normalize this transient reward based on the max_x_distance to the goal line
                 temp_reward = self.distance_to_goal_penalty * (1 - (current_x_distance/(max_x_distance+ abs(self.min_x_bound))))
 
             # if current state's distance remains the same or is further away to goal comapred to previous state, do not penalize agent
             else:
-                # increasing linear transient reward gradient moving away from goal line. 
-                # further the agent to goal, negative transient reward is larger. 
+                # increasing linear transient reward gradient moving away from goal line.
+                # further the agent to goal, negative transient reward is larger.
                 # we normalize this transient reward based on the max_x_distance to the goal line
                 # temp_reward = -self.distance_to_goal_penalty * current_x_distance/max_x_distance
                 pass
@@ -593,12 +612,12 @@ class TwoWheelRobot:
     def get_robot_time_reward(self, time_step, goal_steps):
         """get robot time penalty for stabilizing.
         """
-        
+
         temp_reward = 0
         # rewards agent for survival time. time taken to reached goal / termination
         temp_reward +=  self.robot_time_penalty * time_step/goal_steps
         return temp_reward
-    
+
     def get_velocity_time_reward(self):
         """get the velocity reward for staying a low speeds for balancing
         """
@@ -606,16 +625,16 @@ class TwoWheelRobot:
         temp_reward += 0.1 - abs(self.target_velocity_left_wheel - 0) * 0.010
         temp_reward += 0.1 - abs(self.target_velocity_right_wheel - 0) * 0.010
         return temp_reward
-        
+
     """ ===== Methods to check robot states ===== """
-    
+
     def print_robot_dimensions(self):
         """Get Dimensions of Robot and it's links
         """
         boundaries = p.getAABB(self.robotid,-1)
         lwh = np.array(boundaries[1])-np.array(boundaries[0])
         print(lwh)
-        
+
         boundaries = p.getAABB(self.robotid,0)
         lwh = np.array(boundaries[1])-np.array(boundaries[0])
         print("left wheel dimensions (x,y,z):",lwh)
@@ -707,7 +726,7 @@ class TwoWheelRobot:
         # render west boundary
         westEdgeId = p.createVisualShape(p.GEOM_BOX, halfExtents=[edgeWidth/2, edgeLength/2, edgeHeight/2], rgbaColor=[1,0,0,1])
         p.createMultiBody(baseMass=0, baseCollisionShapeIndex=-1,baseVisualShapeIndex=eastEdgeId, basePosition=[(self.max_x_bound-5)/2, self.max_y_bound, 0])
-       
+
     def load_slope(self):
         """Loads the slope model
         """
@@ -740,7 +759,7 @@ class TwoWheelRobot:
             self.joint_dict[jointName] = {'index':i,
                                      'jointLowerLimit':jointLowerLimit,
                                      'jointUpperLimit':jointUpperLimit}
-            
+
     def print_robot_attributes(self):
         """Prints robot Attributes
         """
@@ -754,6 +773,46 @@ class TwoWheelRobot:
         """
         p.disconnect()
 
+
+class TwoWheelRobotTf(PyEnvironment):
+    def __init__(self, twr: TwoWheelRobot, discount=1, goal_step=240 * 40):
+        super(TwoWheelRobotTf, self).__init__(handle_auto_reset=True)
+        self._twr = twr
+        self._discount = discount
+        self._goal_step = goal_step
+        self.reset()
+
+    def _reset(self):
+        self._twr.reset()
+        self._num_steps = 0
+        observations = self._twr.get_robot_state()
+        observations = self._twr.normalize_observations(observations)
+        return ts.restart(observations)
+
+    def _step(self, action: types.NestedArray) -> ts.TimeStep:
+        self._num_steps += 1
+        observations, reward, transient_reward, done, succeed, _ = self._twr.step(
+            np.array((action[0], action[0])),
+            model_name="SAC-TFA",
+            time_step=self._num_steps,
+            goal_step=self._goal_step,
+        )
+        observations = self._twr.normalize_observations(observations)
+        print(observations)
+        if self._num_steps > self._goal_step:
+            return ts.termination(observations, 10)
+        elif done or succeed:
+            return ts.termination(observations, -10)
+        else:
+            return ts.transition(observations, .1, self._discount)
+
+
+    def action_spec(self):
+        return array_spec.BoundedArraySpec((2,), np.float32, -1.0, 1.0)
+
+    def observation_spec(self):
+        return array_spec.BoundedArraySpec((40,), np.float64, -1.0, 1.0)
+
+
 if __name__ == '__main__':
-    robot_env = TwoWheelRobot(render_mode='GUI',
-                    enable_keyboard=True)
+    robot_env = TwoWheelRobot(render_mode="GUI", enable_keyboard=True)

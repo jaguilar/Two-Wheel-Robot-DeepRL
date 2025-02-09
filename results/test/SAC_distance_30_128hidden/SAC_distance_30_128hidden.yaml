@@ -1,4 +1,4 @@
-config_path: results/train/SAC_distance_30_128hidden/SAC_distance_30_128hidden.yaml
+config_path: /home/jaguilar/projects/Two-Wheel-Robot-DeepRL/results/train/SAC_distance_30_128hidden/SAC_distance_30_128hidden.yaml
 environment:
   distance_to_goal_penalty: 0.7
   enable_keyboard: false
@@ -25,7 +25,7 @@ hyperparameter_tuning:
   type: model
   value_list:
   - DQN
-load_model_weights_path: ./results/test/SAC_distance_30_128hidden\best_model.pt
+load_model_weights_path: ./results/test/SAC_distance_30_128hidden/best_model.pt
 mode: test
 model:
   batch_size: 1

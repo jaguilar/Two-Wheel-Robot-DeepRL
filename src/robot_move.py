@@ -9,7 +9,8 @@ import yaml
 import argparse
 import json 
 
-from robot_environment import TwoWheelRobot
+from robot_sac_tf import RobotSacTf
+from robot_environment import TwoWheelRobot, TwoWheelRobotTf
 from utils.metrics import TotalTrainingMetrics
 from utils.recordVideoDirectMode import *
 from utils.epsilonSchedules import epsilon_function
@@ -142,6 +143,11 @@ class MoveRobot:
                         multi_action = self.multi_action,
                         goal_type=self.goal_type
                         )
+        if self.model_name == "SAC-TFA":
+            self.tf_env = TwoWheelRobotTf(self.env, self.goal_step)
+            self.tf_sac = RobotSacTf(self.tf_env, self.hidden_layer_size)
+        else:
+            self.tf_sac = None
 
         # get observation dimensions
         self.observation_space_dimension = len(self.env.get_robot_state())
@@ -210,7 +216,9 @@ class MoveRobot:
         self.pt_model_list = ['DQN', 'DQNMA', 'SAC']
 
         # load DQN based on config model name
-        if self.model_name == 'DQN' or self.model_name == 'DQNMA':
+        if self.model_name == "SAC-TFA":
+            pass
+        elif self.model_name == "DQN" or self.model_name == "DQNMA":
             from robot_neural_network import ReplayMemoryDQN, DQN
             if self.model_name == 'DQN':
                 self.policy_net = DQN(self.observation_space_dimension, self.action_space_dimension, self.hidden_layer_size).to(self.device)
@@ -259,7 +267,9 @@ class MoveRobot:
                 load_weight = torch.load(self.load_model_weight_path, map_location=self.device)
                 print(load_weight)
                 # load saved model weights
-                self.agent.load_state_dict(torch.load(self.load_model_weight_path, map_location=self.device))
+                self.agent.policy.load_state_dict(
+                    torch.load(self.load_model_weight_path, map_location=self.device)
+                )
 
         elif self.model_name in self.tf_model_list:
             self.num_wheels = 2
@@ -360,7 +370,9 @@ class MoveRobot:
 
                     action = select_action_DQN(obs = state, n_actions = self.action_space_dimension, policy_net = self.policy_net, device = self.device, epsilon = self.epsilon) # state, self.policy_net, self.device, self.epsilon)
                 elif self.model_name == 'SAC':
-                    action = self.agent.module.select_action(state, self.epsilon,evaluate=self.mode)  # Sample action from policy
+                    action = self.agent.select_action(
+                        state, self.epsilon, evaluate=self.mode
+                    )  # Sample action from policy
                 elif self.model_name in self.tf_model_list:
                     action = self.agent.select_actions(state,mode="train")
                 else:
@@ -401,7 +413,14 @@ class MoveRobot:
                         updates_per_step = 1
                         for i in range(updates_per_step):
                             # Update parameters of all the networks
-                            policy_loss = self.agent.module.update_weights(self.memory, self.batch_size, self.updates)
+                            if self.model_name == "SAC":
+                                policy_loss = self.agent.update_weights(
+                                    self.memory, self.batch_size, self.updates
+                                )
+                            else:
+                                policy_loss = self.agent.module.update_weights(
+                                    self.memory, self.batch_size, self.updates
+                                )
                             self.updates += 1
                             loss += policy_loss
                     if time_step == self.max_steps:
@@ -518,6 +537,9 @@ class MoveRobot:
     def run(self):
         """ Run the training/testing loop.
         """
+        if self.tf_sac:
+            self.tf_sac.learn()
+            return
         print(f"goal type: {self.goal_type}")
         mode_caption = 'TRAINING' if self.mode == 'train' else 'TESTING'            
         print(f"\n ===== START {mode_caption} ===== ")
@@ -569,7 +591,7 @@ class MoveRobot:
                 model_class = self.policy_net
             # SAC model
             else: 
-                model_class = self.agent.module.policy
+                model_class = self.agent.policy
 
             if self.device_type !='cpu':
                 torch.save(model_class.module.state_dict(), self.save_model_weights_path)

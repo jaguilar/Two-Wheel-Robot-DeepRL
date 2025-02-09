@@ -1,11 +1,11 @@
-config_path: ./configs/main.yaml
+config_path: configs/tf_sac.yaml
 environment:
   distance_to_goal_penalty: 0.7
   enable_keyboard: false
-  environment_type: SLOPE
+  environment_type: FLAT
   goal_step: 400
-  goal_type: distance
-  render_mode: DIRECT
+  goal_type: time
+  render_mode: GUI
   target_velocity_change: 0.5
   time_penalty: 0.2
   time_step_size: 1/20
@@ -30,7 +30,7 @@ hyperparameter_tuning:
   - 0.0001
   - 1.0e-05
   - 1.0e-06
-load_model_weights_path: ./results/train/SAC_robot_weight_5kg_force/best_model.pt
+load_model_weights_path: ./results/train/SAC_robot_weight_5kg_force
 mode: train
 model:
   batch_size: 1
@@ -42,10 +42,9 @@ model:
   hidden_layer_size:
   - 128
   - 128
-  - 128
   learning_rate_actor: 0.0001
   learning_rate_critic: 0.0001
-  name: SAC
+  name: SAC-TFA
   tau: 0.005
   weight_decay:
   - 0

@@ -7,12 +7,12 @@ run:
 
 # ======= MODEL ======= #
 model:
-  name: SAC #SAC #Reinforce #DQN #MAA2C #A2C
+  name: SAC-TFA #SAC #Reinforce #DQN #MAA2C #A2C
   learning_rate_actor: 1.0e-4
   learning_rate_critic: 1.0e-4
   batch_size: 1 # num of steps before update
   gamma: 0.99
-  hidden_layer_size: [128,128,128] #[512,256,128] #[2048,1024,512] #[128,128,128]
+  hidden_layer_size: [128,128] #[512,256,128] #[2048,1024,512] #[128,128,128]
   weight_decay: [0,0,0]
   dropout_rate: [0,0,0]
   tau: 0.005
@@ -52,8 +52,8 @@ environment:
   render_mode: 'GUI' # DIRECT, GUI
   video_mode: False # for recording video in direct mode
   enable_keyboard: False
-  environment_type: 'SLOPE' #'FLAT' #'SLOPE'
-  goal_type: 'distance' #'time' #'distance'
+  environment_type: 'FLAT' #'FLAT' #'SLOPE'
+  goal_type: 'time' #'time' #'distance'
   x_distance_to_goal: 40
   goal_step: 400 # 20 seconds
   time_step_size: 1/20 # user time step size, controls frequency of action made by the robot

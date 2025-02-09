@@ -11,13 +11,18 @@ dependencies = [
   # These dependencies might not be exactly correct I just set them as needed
   # to comply with my own project requirements.
   "matplotlib==3.7.1",
-  "numpy==1.23.5",
+  "numpy<2.0.0 , >= 1.26.2",
   "opencv_python==4.7.0.72",
   "pandas==2.0.0",
   "pybullet==3.2.5",
   "PyYAML==6.0",
   "seaborn==0.12.2",
-  "tensorflow[and-cuda]",
-  "tensorflow_probability",
+  "tensorflow[and-cuda] == 2.15.0.post1",
+  "dm-reverb[tensorflow]",
+  "tensorflow_probability == 0.23.0",
   "torch<2.0.0",
+  "tf-agents[reverb]",
+  "typing_extensions==4.5.0",
+  "keras",
+  "tf_keras",
 ]
